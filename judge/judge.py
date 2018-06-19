@@ -1,12 +1,10 @@
 import requests
 import re
+#import sys
 from requests.adapters import HTTPAdapter
+from config import urlconfig
 
-urlconfig={
-	"loginurl":"https://pt.hnu.edu.cn/zfca/login",
-	"jumptojudgeurl":"https://pt.hnu.edu.cn/zfca/login/fakelogin.jsp?ywxtdm=0122579031373493749&yhlx=student&yhm=201508010610&s_ticket=1659"
 
-}
 config=urlconfig
 #个人门户基类
 '''
@@ -15,6 +13,14 @@ function:
 	login
 
 '''
+class customException(Exception):
+	def __init__(self,info):
+		super().__init__()
+		self.message=info
+
+	def __str__(self):
+		return self.message
+
 class basicPersonal():
 	def __init__(self,config):
 		
@@ -77,9 +83,10 @@ class judge(basicPersonal):
 &scriptSessionId=3475609DF5CC6ED0E19673ACCA1FA18C9\
 &c0-scriptName=dropNumAjax&c0-methodName=urlDropNum&c0-id=0&c0-param0=string:145042052923857768&c0-param1=null:null&batchId=20"
 		#print(postdict)
-		url='http://pt.hnu.edu.cn/dwr/call/plaincall/dropNumAjax.urlDropNum.dwr '
+		
+		url=self.config['ticket']
 		headers={
-			"Origin":"http://pt.hnu.edu.cn"
+			"Origin":self.config['origin']
 
 		}
 		response=self.s.post(url,data=postdict,headers=headers)
@@ -88,8 +95,8 @@ class judge(basicPersonal):
 
 	#跳转的url
 	def geturl(self):
-		url='http://pt.hnu.edu.cn/dwr/call/plaincall/portalAjax.getPicUrlList.dwr'
 		
+		url=self.config['getjumpurl']
 		datas="callCount=1&page=/portal.do?ticket=ST-12492-Odf5INKc3ndfzIYNngpM-zfca&httpSessionId=A72C068638046A2EE91A1351899FDFD0&scriptSessionId=025018557254CCD21B694D88799B6A4D508\
 &c0-scriptName=portalAjax\
 &c0-methodName=getPicUrlList\
@@ -99,7 +106,7 @@ class judge(basicPersonal):
 &batchId=9"
 		#print(datas)
 		headers={
-			'Origin': 'http://pt.hnu.edu.cn',
+			'Origin': self.config['origin'],
 		}
 		response=self.s.post(url,data=datas,headers=headers)
 		#print(response.text)
@@ -111,7 +118,8 @@ class judge(basicPersonal):
 		return result
 
 	def loginjudge(self,ticket,username,password):
-		url='http://pgfz.hnu.edu.cn/Logon.do?method=logondd'
+	
+		url=self.config['loginjudge']
 		forms={
 			"login_id":username,
 			"password":password,
@@ -142,21 +150,88 @@ class judge(basicPersonal):
 		#获取ticket
 		ticket=self.getticket()
 
-		self.loginjudge(ticket,"201508010610",'287830')
+		self.loginjudge(ticket,self.config['number'],self.config['password'])
 		#成功登录评教
+	def getselecturl(self):
 
+		response=self.s.get(self.config['jieduanpingjia'])
+		#print(response.text)
+
+		jumpurl=re.findall('<a href="(.*?)" title="点击进入评价">进入评价</a>',response.text)
+
+		if(len(jumpurl)==0):
+			raise customException("当前不可阶段评价")
+
+		jumpurl=self.config['prefix']+jumpurl[0]
+
+		response=self.s.get(jumpurl).text
+		#print(response)
+		pat1='''<a href="javascript:JsOpenWin\('(.*?)',1000,700\)">修改'''
+		pat2='''<a href="javascript:JsOpenWin\('(.*?)',1000,700\)">评价'''
+		pat='''\[(.*?)\]'''
+
+		c=re.compile(pat,re.S)
+		results=c.findall(response)
+		urlList=[]
+		for r in results:
+			#if (r.find("修改")!=-1) or ((r.find("评价")!=-1) and r.find("查看评价详细")==-1):
+			#urlList.append(re.findall("javascript:JsOpenWin\('(.*?)',1000,700\)",r)[0])
+			#print(r)
+			'''
+			result1=re.findall("pat1",r)
+			result2=re.findall("pat2",r)
+			print(result1)
+			if len(result1)!=0:
+				urlList.append(result1[0])
+			elif len(result2)!=0:
+				urlList.append(result2[0])
+			'''
+			if r.find("修改")!=-1:
+				urlList.append(re.findall("'(.*?)'",r)[0])
+			elif r.find("评价")!=-1 and r.find("查看评价明细")==-1:
+				urlList.append(re.findall("'(.*?)'",r)[0])
+
+		#print(urlList)
+		return urlList
+		#print(urlList[0])
+		#for u in urlList:
+			#print(u)
+			#print('-----------------------------------------------')
+		#print(urlList)
 	#对每一个url 进行评教
-	def judgeonurl(self):
-		url='/hndx_jsxsd/xspj/xspj_edit.do?xnxq01id=2017-2018-2&pj01id=F01B4426639E4CD8A44C18B8F88A8F27&pj0502id=5B281B68272470ACE0530100007F4516&jx02id=083670&jx0404id=20172083670003&xsflid=&zpf=0&jg0101id=2005230&jx02id=083670'
-		prefix='http://pgfz.hnu.edu.cn'
+	def judgeonurl(self,url):
+		
 
-
+		prefix=self.config['prefix']
 		url=prefix+url
 		pj06xhlist=[]
 		response=self.s.get(url).text
 
 		hiddeninfos=re.findall('<input type="hidden" name="(.*?)" value="(.*?)"',response)
-		print(hiddeninfos)
+		#print(hiddeninfos)
+
+
+		#文档是个好东西
+
+		'''
+		http://docs.python-requests.org/en/master/user/quickstart/#make-a-request
+		You can also pass a list of tuples to the data argument.
+		This is particularly useful when the form has multiple elements 
+		that use the same key:
+		>>> payload = (('key1', 'value1'), ('key1', 'value2'))
+		>>> r = requests.post('http://httpbin.org/post', data=payload)
+		>>> print(r.text)
+			{
+  				...
+ 			    "form": {
+    				"key1": [
+      				"value1",
+      				"value2"
+    						]
+  						},
+  				...
+			}
+		'''
 		form=[]
 		for info in hiddeninfos:
 			
@@ -165,7 +240,7 @@ class judge(basicPersonal):
 
 		#form["issubmit"]=0
 		form.append(("issubmit",0))
-		#基础表单构造完毕
+		#基础表单构造完毕(每次提交都一样的东西)
 		#开始选项
 		#print(response)
 
@@ -175,10 +250,11 @@ class judge(basicPersonal):
 
 		#print(alloptions)
 		#这个地方需要考虑一下不是4个选项的时候
-		print(len(alloptions))
-		count=int(len(alloptions)/4)
-		print(count)
+		#print(len(alloptions))
+		count=int(len(alloptions)/4)  #还没有遇到有 e的选择
+		#print(count)
 
+		#构造提交的选项
 		xuan=[i*4 for i in range(count)]
 
 		for x in xuan:
@@ -189,33 +265,29 @@ class judge(basicPersonal):
 
 			form.append((ids,value))
 
-		print(form)
+		#print(form)
 		#表单构造完毕，开始提交
-		url='http://pgfz.hnu.edu.cn/hndx_jsxsd/xspj/xspj_save.do'
+		url=self.config["submitresult"]
 		response=self.s.post(url,data=form)
-		#print(response.text)
+		print(response.text)
 		#print(hiddeninfos)
 
 	#提交评教流程
 	def submitprocess(self):
-		pass
+		urls=self.getselecturl()
+		for url in urls:
+			self.judgeonurl(url)
+		
 
-	def unknows(self):
-		url='https://pt.hnu.edu.cn/zfca?yhlx=student&login=0122579031373493749&url=%23'
-		response=self.s.get(url)
-		#print(response.text)
+
 
 if __name__=='__main__':
 
-	#basic=basicPersonal(config)
-
-	#basic.login('201508010610','287830')
 	j=judge(config)
 
-	print(j.login('201508010610','287830'))
+	j.login(config['number'],config['password'])
+
 	j.loginprocess()
-	j.judgeonurl()
-	#j.geturl()
-	#j.ticket()
-	#j.jumptojudge('287830')
-	#j.unknows()
+	
+	j.submitprocess()
+	
